@@ -2,6 +2,17 @@ import { EncryptJWT, jwtDecrypt } from "jose";
 import { Octokit } from "@octokit/rest";
 import { keyBytes } from "./_key";
 
+export const SESSION_COOKIE = "gh_session_v2";
+export const SESSION_TTL = 86400; // 1 day
+
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: true,
+  path: "/",
+  maxAge: SESSION_TTL,
+};
+
 export interface SessionPayload {
   token: string;
   refresh_token?: string;

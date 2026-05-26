@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { keyBytes } from "./_key";
+import { encryptSession, SESSION_TTL, type SessionPayload } from "./session";
 
 export interface StatePayload {
   redirect_uri: string;
@@ -47,6 +48,38 @@ export function buildAuthorizeUrl(
   if (opts?.scope) url.searchParams.set("scope", opts.scope);
   if (opts?.login) url.searchParams.set("login", opts.login);
   return url.toString();
+}
+
+export function buildOAuthErrorRedirectUrl(error: string, statePayload: StatePayload): string {
+  const url = new URL(statePayload.redirect_uri);
+  url.searchParams.set("error", error);
+  if (statePayload.client_state) url.searchParams.set("state", statePayload.client_state);
+  return url.toString();
+}
+
+export type OAuthCallbackResult =
+  | { ok: true; encrypted: string; tokenPayload: SessionPayload; statePayload: StatePayload }
+  | { ok: false; error: string; statePayload?: StatePayload };
+
+export async function processOAuthCallback(opts: {
+  code: string;
+  state: string;
+  secret: string;
+  clientId: string;
+  clientSecret: string;
+  callbackUrl: string;
+}): Promise<OAuthCallbackResult> {
+  const statePayload = await verifyState(opts.state, opts.secret);
+  if (!statePayload) return { ok: false, error: "invalid_state" };
+
+  const data = await exchangeCode(opts.clientId, opts.clientSecret, opts.code, opts.callbackUrl);
+  if (data.error || !data.access_token) return { ok: false, error: data.error ?? "no_token", statePayload };
+
+  const tokenPayload: SessionPayload = { token: data.access_token };
+  if (typeof data.refresh_token === "string") tokenPayload.refresh_token = data.refresh_token;
+
+  const encrypted = await encryptSession(tokenPayload, opts.secret, SESSION_TTL);
+  return { ok: true, encrypted, tokenPayload, statePayload };
 }
 
 export async function exchangeCode(
